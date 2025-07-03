@@ -25,6 +25,15 @@ Route::get('aboutUs', function () {
 Route::get('contact', function () {
     return 'There will be show contact information here.';
 });
+// Post Case Route
+Route::get('postCase', function () {
+    return 'There will be show post case information here.';
+});
+// Explore Cases Route
+Route::get('explore-cases', function () {
+    return 'There will be show all cases here.';
+});
+
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
