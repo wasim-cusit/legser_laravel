@@ -1,0 +1,153 @@
+body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #f8fafc;
+            color: #374151;
+            margin: 0;
+            padding: 0;
+        }
+        /* header {
+            background-color: #1d4ed8;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        } */
+        /* header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+        } */
+        main {
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+        }
+        main h2 {
+            color: #1d4ed8;
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+        main p {
+            line-height: 1.6;
+            font-size: 1.125rem;
+            margin-bottom: 20px;
+        }
+        footer {
+            background-color: #1d4ed8;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+        footer p {
+            margin: 0;
+            font-size: 0.875rem;
+        }
+
+
+/* Custom Bootstrap Navbar Theme */
+.custom-navbar {
+    background: linear-gradient(to right, #0A274B, #102C57);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Legser branding */
+.custom-navbar .brand-name {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #facc15;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 1.4rem;
+    font-weight: bold;
+}
+
+/* Navbar links */
+.custom-navbar .nav-link {
+    color: #ffffff !important;
+    font-weight: 600;
+    position: relative;
+}
+
+.custom-navbar .nav-link:hover {
+    color: #facc15 !important;
+}
+
+.custom-navbar .nav-link::after {
+    content: '';
+    position: absolute;
+    width: 0%;
+    height: 2px;
+    left: 0;
+    bottom: 0;
+    background-color: #facc15;
+    transition: width 0.3s ease-in-out;
+}
+
+.custom-navbar .nav-link:hover::after {
+    width: 100%;
+}
+
+/* Auth Buttons */
+.auth-buttons .btn-outline-light {
+    border-color: #facc15;
+    color: #facc15;
+}
+
+.auth-buttons .btn-outline-light:hover {
+    background-color: #facc15;
+    color: #0A274B;
+}
+
+.auth-buttons .btn-warning {
+    background-color: #facc15;
+    border: none;
+}
+
+.auth-buttons .btn-warning:hover {
+    background-color: #ffe25c;
+    color: #0A274B;
+}
+
+
+/* banner and hero title  */
+.hero {
+    /* Background image: change path to your image */
+    background-image: url('{{ asset("images/lawyer_banner.jpeg") }}');
+    background-size: cover;        /* Cover whole section */
+    background-position: center;   /* Center the image */
+    background-repeat: no-repeat;
+
+    height: 400px;                 /* Adjust height as needed */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;       /* Vertically center text */
+    align-items: center;           /* Horizontally center text */
+    color: white;
+    text-align: center;
+    position: relative;
+    padding: 0 20px;
+}
+
+/* Optional: add a dark overlay on background */
+.hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;                     /* top,right,bottom,left = 0 */
+    background-color: rgba(0, 0, 0, 0.5); /* semi-transparent black overlay */
+    z-index: 0;
+}
+
+/* Make sure text is above overlay */
+.hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Button styling, you can also use Bootstrap's btn-primary */
+.hero .btn-primary {
+    margin-top: 20px;
+    padding: 10px 25px;
+    font-size: 1.1rem;
+    border-radius: 5px;
+    text-decoration: none;
+}
