@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dual Camera PiP — Front-on-Back Capture</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#131a3a; --muted:#98a2b3; --text:#ecf0ff;
+    --border:rgba(255,255,255,.12); --accent:#7ee787; --accent2:#7aa2ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;
+       color:var(--text); background:linear-gradient(180deg,#0b1020,#09122a)}
+  header{padding:14px 16px; border-bottom:1px solid var(--border);
+         background:rgba(10,16,36,.5); backdrop-filter:saturate(140%) blur(6px)}
+  h1{font-size:18px; margin:0 0 4px 0}
+  .sub{color:var(--muted); font-size:12px}
+  .wrap{max-width:1100px; margin:18px auto; padding:0 14px}
+  .grid{display:grid; grid-template-columns:1fr 320px; gap:16px}
+  @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px}
+  .videoStage{position:relative; aspect-ratio:16/9; background:#060a1b; border-radius:12px; overflow:hidden}
+  video{width:100%; height:100%; object-fit:cover; background:#000}
+  .pip{position:absolute; top:12px; left:12px; width:30%; max-width:45%; aspect-ratio:16/9; border:2px solid var(--border);
+       border-radius:10px; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,.45); cursor:move}
+  .pip video{width:100%; height:100%; object-fit:cover}
+  .resizeHandle{position:absolute; right:6px; bottom:6px; width:18px; height:18px; border-radius:4px;
+                background:linear-gradient(135deg,var(--accent2),var(--accent)); cursor:nwse-resize}
+  .toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+  .btn{appearance:none; border:1px solid var(--border); background:#0f1533; color:var(--text);
+       padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+  .btn.primary{background:linear-gradient(180deg,var(--accent2),#4a78ff); border:none}
+  .btn.green{background:linear-gradient(180deg,var(--accent),#2bc06b); border:none; color:#04160d}
+  .btn.danger{background:linear-gradient(180deg,#ff8a8a,#ff5e5e); border:none; color:#290a0a}
+  .btn:disabled{opacity:.6; cursor:not-allowed}
+  .panel label{display:block; font-size:12px; color:var(--muted); margin:6px 0 4px}
+  select,input[type="checkbox"]{width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--border);
+                                background:#0d1433; color:var(--text)}
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .err{margin-top:8px; color:#ffd1d1; background:#3a0f11; border:1px solid #7f1d1d; padding:8px 10px; border-radius:10px; display:none}
+  canvas{display:none}
+  .note{color:var(--muted); font-size:12px; margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dual Camera PiP — capture front camera on top of back camera</h1>
+  <div class="sub">Open both cameras, drag/resize the selfie overlay, then capture a single combined photo.</div>
+</header>
+
+<div class="wrap">
+  <div class="grid">
+    <!-- Left side: preview + controls -->
+    <div class="card">
+      <div class="videoStage" id="stage">
+        <video id="backVideo" playsinline autoplay muted></video>
+        <div class="pip" id="pip">
+          <video id="frontVideo" playsinline autoplay muted></video>
+          <div class="resizeHandle" title="Resize"></div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button id="setupBtn" class="btn">1) Allow camera access</button>
+        <button id="startBtn" class="btn primary" disabled>2) Start both cameras</button>
+        <button id="captureBtn" class="btn green" disabled>Capture photo</button>
+        <button id="stopBtn" class="btn danger" disabled>Stop</button>
+      </div>
+      <div id="err" class="err"></div>
+      <div class="note">Tip: drag the small window to any corner, use the handle to resize. “Mirror selfie” flips the front camera horizontally.</div>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <!-- Right side: device pickers & options -->
+    <aside class="card panel">
+      <div class="row">
+        <div>
+          <label for="backSel">Back camera (background)</label>
+          <select id="backSel"></select>
+        </div>
+        <div>
+          <label for="frontSel">Front camera (overlay)</label>
+          <select id="frontSel"></select>
+        </div>
+      </div>
+
+      <label for="resSel">Background resolution</label>
+      <select id="resSel">
+        <option value="hd">HD (1280×720)</option>
+        <option value="fhd" selected>Full HD (1920×1080)</option>
+        <option value="uhd">4K (3840×2160)</option>
+        <option value="auto">Auto</option>
+      </select>
+
+      <div class="row" style="margin-top:6px">
+        <div>
+          <label><input id="mirrorFront" type="checkbox" /> Mirror selfie</label>
+        </div>
+        <div>
+          <label><input id="square" type="checkbox" /> Square capture (1:1)</label>
+        </div>
+      </div>
+
+      <label for="pipSize">Overlay size (% of width)</label>
+      <select id="pipSize">
+        <option value="0.22">22%</option>
+        <option value="0.28" selected>28%</option>
+        <option value="0.35">35%</option>
+        <option value="0.45">45%</option>
+      </select>
+
+      <label for="dlName">Download filename</label>
+      <input id="dlName" type="text" value="dual_camera_photo.png" />
+
+      <div class="note" style="margin-top:10px">
+        Compatibility: some devices/browsers (notably iOS Safari) allow only one camera at a time.
+        If the second camera fails, the app will show an error and keep the one that works.
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  const backVideo = document.getElementById('backVideo');
+  const frontVideo = document.getElementById('frontVideo');
+  const backSel   = document.getElementById('backSel');
+  const frontSel  = document.getElementById('frontSel');
+  const resSel    = document.getElementById('resSel');
+  const pipSize   = document.getElementById('pipSize');
+  const mirrorFront = document.getElementById('mirrorFront');
+  const squareChk = document.getElementById('square');
+
+  const setupBtn  = document.getElementById('setupBtn');
+  const startBtn  = document.getElementById('startBtn');
+  const stopBtn   = document.getElementById('stopBtn');
+  const captureBtn= document.getElementById('captureBtn');
+
+  const stage     = document.getElementById('stage');
+  const pip       = document.getElementById('pip');
+  const errBox    = document.getElementById('err');
+  const canvas    = document.getElementById('canvas');
+  const dlName    = document.getElementById('dlName');
+
+  let backStream = null;
+  let frontStream = null;
+
+  // --- Permissions & device listing ---
+  setupBtn.addEventListener('click', async () => {
+    clearError();
+    try {
+      // Ask for camera to unlock device labels
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stopTracks(tmp);
+      await populateDevices();
+      startBtn.disabled = false;
+      setupBtn.disabled = true;
+    } catch (e) {
+      showError('Camera permission denied or unavailable. ' + e.message);
+    }
+  });
+
+  async function populateDevices() {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const vids = devs.filter(d => d.kind === 'videoinput');
+    const toOption = d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || 'Camera';
+      return opt;
+    };
+    backSel.innerHTML = '';
+    frontSel.innerHTML = '';
+    vids.forEach(d => {
+      backSel.appendChild(toOption(d));
+      frontSel.appendChild(toOption(d.clone ? d.clone() : d));
+    });
+
+    // Try to auto-pick environment/user by label keywords
+    const env = vids.find(d => /back|rear|environment/i.test(d.label)) || vids[0];
+    const usr = vids.find(d => /front|user|facetime/i.test(d.label)) || vids[vids.length > 1 ? 1 : 0];
+    if (env) backSel.value = env.deviceId;
+    if (usr) frontSel.value = usr.deviceId;
+  }
+
+  // --- Start streams ---
+  startBtn.addEventListener('click', async () => {
+    clearError();
+    await stopAll();
+
+    const constraintsFor = (deviceId, prefer) => {
+      const base = {audio:false, video:{}};
+      // Resolution preference
+      const res = resSel.value;
+      if (res === 'hd')   Object.assign(base.video, {width:{ideal:1280}, height:{ideal:720}});
+      if (res === 'fhd')  Object.assign(base.video, {width:{ideal:1920}, height:{ideal:1080}});
+      if (res === 'uhd')  Object.assign(base.video, {width:{ideal:3840}, height:{ideal:2160}});
+      // Device preference
+      if (deviceId) base.video.deviceId = { exact: deviceId };
+      else if (prefer) base.video.facingMode = { ideal: prefer }; // fallback
+      return base;
+    };
+
+    try {
+      // Try both in parallel
+      const [back, front] = await Promise.allSettled([
+        navigator.mediaDevices.getUserMedia(
+          constraintsFor(backSel.value, 'environment')
+        ),
+        navigator.mediaDevices.getUserMedia(
+          constraintsFor(frontSel.value, 'user')
+        ),
+      ]);
+
+      if (back.status === 'fulfilled') {
+        backStream = back.value;
+        backVideo.srcObject = backStream;
+      } else {
+        showError('Back camera failed: ' + back.reason?.message);
+      }
+
+      if (front.status === 'fulfilled') {
+        frontStream = front.value;
+        frontVideo.srcObject = frontStream;
+      } else {
+        showError('Front camera failed: ' + front.reason?.message);
+      }
+
+      if (!backStream && !frontStream) {
+        throw new Error('No camera stream could be started.');
+      }
+
+      // Apply initial UI states
+      applyMirror();
+      applyPipSize();
+
+      captureBtn.disabled = false;
+      stopBtn.disabled = false;
+      startBtn.disabled = true;
+    } catch (e) {
+      showError(e.message);
+      await stopAll();
+    }
+  });
+
+  // --- Stop all ---
+  stopBtn.addEventListener('click', stopAll);
+  async function stopAll() {
+    captureBtn.disabled = true;
+    stopBtn.disabled = true;
+    startBtn.disabled = false;
+
+    if (backStream) stopTracks(backStream), backStream = null;
+    if (frontStream) stopTracks(frontStream), frontStream = null;
+    backVideo.srcObject = null;
+    frontVideo.srcObject = null;
+  }
+
+  function stopTracks(stream){ stream.getTracks().forEach(t => t.stop()); }
+
+  // --- PIP placement/size/mirror ---
+  pip.addEventListener('pointerdown', dragStart);
+  const resizer = pip.querySelector('.resizeHandle');
+  resizer.addEventListener('pointerdown', resizeStart);
+
+  function dragStart(e){
+    if (e.target === resizer) return; // resizing
+    e.preventDefault();
+    pip.setPointerCapture(e.pointerId);
+    const rect = stage.getBoundingClientRect();
+    const pipRect = pip.getBoundingClientRect();
+    const ox = e.clientX - pipRect.left;
+    const oy = e.clientY - pipRect.top;
+    function move(ev){
+      const x = Math.min(rect.right - pipRect.width, Math.max(rect.left, ev.clientX - ox));
+      const y = Math.min(rect.bottom - pipRect.height, Math.max(rect.top,  ev.clientY - oy));
+      pip.style.left = (x - rect.left) + 'px';
+      pip.style.top  = (y - rect.top)  + 'px';
+    }
+    function up(ev){
+      pip.releasePointerCapture(e.pointerId);
+      pip.removeEventListener('pointermove', move);
+      pip.removeEventListener('pointerup', up);
+      pip.removeEventListener('pointercancel', up);
+    }
+    pip.addEventListener('pointermove', move);
+    pip.addEventListener('pointerup', up);
+    pip.addEventListener('pointercancel', up);
+  }
+
+  function resizeStart(e){
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    const rect = stage.getBoundingClientRect();
+    const start = { x:e.clientX, y:e.clientY, w:pip.offsetWidth, h:pip.offsetHeight, l:pip.offsetLeft, t:pip.offsetTop };
+    function move(ev){
+      const dx = ev.clientX - start.x;
+      const dw = Math.max(80, start.w + dx);
+      const nh = dw / (16/9);
+      let l = start.l; let t = start.t;
+      if (l + dw > rect.width) l = rect.width - dw;
+      if (t + nh > rect.height) t = rect.height - nh;
+      pip.style.width = dw + 'px';
+      pip.style.left  = Math.max(0, l) + 'px';
+      pip.style.top   = Math.max(0, t) + 'px';
+    }
+    function up(){
+      resizer.releasePointerCapture(e.pointerId);
+      resizer.removeEventListener('pointermove', move);
+      resizer.removeEventListener('pointerup', up);
+      resizer.removeEventListener('pointercancel', up);
+    }
+    resizer.addEventListener('pointermove', move);
+    resizer.addEventListener('pointerup', up);
+    resizer.addEventListener('pointercancel', up);
+  }
+
+  function applyPipSize(){
+    // Set width relative to stage width
+    const w = stage.clientWidth * parseFloat(pipSize.value);
+    pip.style.width = Math.max(100, w) + 'px';
+  }
+  pipSize.addEventListener('change', applyPipSize);
+
+  function applyMirror(){
+    frontVideo.style.transform = mirrorFront.checked ? 'scaleX(-1)' : 'none';
+  }
+  mirrorFront.addEventListener('change', applyMirror);
+
+  // --- Capture combined frame ---
+  captureBtn.addEventListener('click', async () => {
+    try {
+      const backTrack = backStream?.getVideoTracks?.()[0];
+      const frontTrack = frontStream?.getVideoTracks?.()[0];
+      if (!backTrack && !frontTrack) throw new Error('No active camera to capture.');
+
+      // Base canvas from the background stream (or front if back missing)
+      const baseVideo = backVideo.srcObject ? backVideo : frontVideo;
+      const baseW = baseVideo.videoWidth || 1280;
+      const baseH = baseVideo.videoHeight || 720;
+
+      // Square option
+      let outW = baseW, outH = baseH, sx = 0, sy = 0, sw = baseW, sh = baseH;
+      if (squareChk.checked){
+        const minSide = Math.min(baseW, baseH);
+        outW = outH = minSide;
+        sx = (baseW - minSide) / 2;
+        sy = (baseH - minSide) / 2;
+        sw = sh = minSide;
+      }
+
+      canvas.width = outW; canvas.height = outH;
+      const ctx = canvas.getContext('2d');
+
+      // Draw background (back camera if present)
+      if (backVideo.srcObject) {
+        drawVideoCover(ctx, backVideo, sx, sy, sw, sh, outW, outH);
+      } else {
+        // If no back video, fill dark bg
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,outW,outH);
+      }
+
+      // Draw front PIP (if present)
+      if (frontVideo.srcObject) {
+        // Compute pip relative rectangle
+        const sRect = stage.getBoundingClientRect();
+        const pRect = pip.getBoundingClientRect();
+        const relX = pRect.left - sRect.left;
+        const relY = pRect.top  - sRect.top;
+        const scaleX = outW / sRect.width;
+        const scaleY = outH / sRect.height;
+        const dx = relX * scaleX;
+        const dy = relY * scaleY;
+        const dw = pRect.width * scaleX;
+        const dh = pRect.height * scaleY;
+
+        ctx.save();
+        if (mirrorFront.checked) {
+          // mirror around center of target rect
+          ctx.translate(dx + dw/2, dy + dh/2);
+          ctx.scale(-1, 1);
+          ctx.translate(-(dx + dw/2), -(dy + dh/2));
+        }
+        drawVideoCover(ctx, frontVideo, 0, 0, frontVideo.videoWidth, frontVideo.videoHeight, dw, dh, dx, dy);
+        ctx.restore();
+      }
+
+      const url = canvas.toDataURL('image/png');
+      download(url, (dlName.value || 'dual_camera_photo.png').replace(/\s+/g,'_'));
+    } catch (e) {
+      showError('Capture failed: ' + e.message);
+    }
+  });
+
+  function drawVideoCover(ctx, video, sx, sy, sw, sh, tw, th, dx=0,dy=0){
+    // Draw with "cover" fit to fill the target rect
+    const vr = sw / sh, tr = tw / th;
+    let dw = tw, dh = th, sdx = sx, sdy = sy, dsw = sw, dsh = sh;
+    if (tr > vr) {
+      // wider target → crop vertically
+      const w = sw;
+      const h = sw / tr;
+      sdy = sy + (sh - h)/2; dsw = w; dsh = h;
+    } else {
+      // taller target → crop horizontally
+      const h = sh;
+      const w = sh * tr;
+      sdx = sx + (sw - w)/2; dsw = w; dsh = h;
+    }
+    ctx.drawImage(video, sdx, sdy, dsw, dsh, dx, dy, tw, th);
+  }
+
+  function download(dataURL, filename){
+    const a = document.createElement('a');
+    a.href = dataURL; a.download = filename || 'photo.png';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function showError(msg){
+    errBox.textContent = msg;
+    errBox.style.display = 'block';
+  }
+  function clearError(){ errBox.style.display = 'none'; errBox.textContent = ''; }
+
+})();
+</script>
+</body>
+</html>
